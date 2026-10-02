@@ -2,7 +2,8 @@
 
 - `barcode_log_analyzer.py`: Barcode.txt 를 파싱하는 스크립트입니다. 표준 라이브러리만 쓰므로 Windows Python 에서 그대로 실행됩니다.
   - `python barcode_log_analyzer.py Barcode.txt --csv all.csv`: 검사 1건을 1행으로 내보냅니다.
-  - `python barcode_log_analyzer.py Barcode.txt --compare-batches ng.csv`: 1차 배치 NG 이미지가 다음 배치에서 어떻게 됐는지 비교합니다.
+  - `python barcode_log_analyzer.py Barcode.txt --compare-batches ng.csv`: 1차 배치 NG 이미지가 이후 모든 배치에서 어떻게 됐는지 이미지별로 비교합니다(배치마다 열 추가).
+- `BARCODE_NG_ANALYSIS.md`: 분석 결과 전체 정리본입니다. 새 세션은 이 문서로 시작합니다.
 - `ng378_batch1_vs_batch2.csv`: 1차 배치(DownSize=2) NG 378장과 2차 배치(DownSize=1) 결과를 비교한 표입니다.
 
 | 컬럼 | 의미 |
