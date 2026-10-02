@@ -5,7 +5,8 @@
     python barcode_log_analyzer.py Barcode.txt                 # 요약 출력
     python barcode_log_analyzer.py Barcode.txt --csv out.csv   # 검사 1건당 1행 CSV
     python barcode_log_analyzer.py Barcode.txt --compare-batches ng.csv
-        # 1차 배치 NG 이미지가 다음 배치에서 어떻게 됐는지 파일명 기준으로 비교
+        # 1차 배치 NG 이미지가 이후 모든 배치에서 어떻게 됐는지 파일명 기준으로 비교 (배치마다 열 추가)
+        # 설정(DownSize/Distortion/InspMilTimeOut)을 바꿔 가며 같은 로그에 배치를 여러 번 돌려도 된다.
 
 로그 해석 전제 (소스 미확인 상태의 추정):
   - "PrepocProcess start" ~ "PrepocProcess end" 가 검사 1건.
@@ -92,6 +93,7 @@ def main():
     ap.add_argument('log')
     ap.add_argument('--csv')
     ap.add_argument('--compare-batches')
+    ap.add_argument('--base', type=int, default=1, help='비교 기준 배치 번호 (기본 1)')
     ap.add_argument('--cap-margin', type=int, default=40,
                     help='Timeout + 이 값(ms) 이상 걸린 시도를 timeout 의심으로 본다 (기본 40)')
     a = ap.parse_args()
@@ -114,6 +116,7 @@ def main():
         print('   FOV total/NG:', {k: tuple(v) for k, v in sorted(fov.items(), key=lambda kv: -kv[1][0])})
         cls = collections.Counter(classify(r, a.cap_margin) for r in rs)
         print('   class:', dict(cls))
+        print('   timeout:', dict(collections.Counter(r['timeout'] for r in rs)))
 
     if a.csv:
         with open(a.csv, 'w', newline='', encoding='utf-8-sig') as f:
@@ -127,25 +130,35 @@ def main():
         print('csv ->', a.csv)
 
     if a.compare_batches:
-        first = {r['file']: r for r in recs if r['batch'] == 1}
-        later = collections.defaultdict(list)
+        # 기준 배치(--base)의 NG 이미지를 파일명으로 묶어, 모든 배치 결과를 열로 나란히 둔다.
+        by_batch = collections.defaultdict(dict)
         for r in recs:
-            if r['batch'] > 1:
-                later[r['file']].append(r)
+            if r['batch']:
+                by_batch[r['batch']][r['file']] = r
+        batches = sorted(by_batch)
+        base = by_batch.get(a.base, {})
+        targets = [fn for fn, r in base.items() if r['result'] == 0]
+        header = ['file', 'fov']
+        for b in batches:
+            header += [f'b{b}_timeout', f'b{b}_result', f'b{b}_fail_ms', f'b{b}_success_ms', f'b{b}_class']
+        n = {b: collections.Counter() for b in batches}
         with open(a.compare_batches, 'w', newline='', encoding='utf-8-sig') as f:
             w = csv.writer(f)
-            w.writerow(['file', 'fov', 'b1_result', 'b1_fail_ms', 'b2_result', 'b2_fail_ms',
-                        'b2_success_ms', 'b2_class'])
-            n = collections.Counter()
-            for fn, r1 in first.items():
-                if r1['result'] != 0 or fn not in later:
-                    continue
-                r2 = later[fn][-1]
-                c = classify(r2, a.cap_margin)
-                n[c] += 1
-                w.writerow([fn, r1['fov'], r1['result'], ' '.join(map(str, r1['fail_ms'])), r2['result'],
-                            ' '.join(map(str, r2['fail_ms'])), r2['ok_ms'] or '', c])
-        print('batch1 NG -> later batch:', dict(n), '->', a.compare_batches)
+            w.writerow(header)
+            for fn in targets:
+                row = [fn, base[fn]['fov']]
+                for b in batches:
+                    r = by_batch[b].get(fn)
+                    if r is None:
+                        row += [''] * 5
+                        continue
+                    c = classify(r, a.cap_margin)
+                    n[b][c] += 1
+                    row += [r['timeout'], r['result'], ' '.join(map(str, r['fail_ms'])), r['ok_ms'] or '', c]
+                w.writerow(row)
+        print(f'batch{a.base} NG {len(targets)}장의 배치별 결과 -> {a.compare_batches}')
+        for b in batches:
+            print(f'   batch{b}:', dict(n[b]))
 
 
 if __name__ == '__main__':
